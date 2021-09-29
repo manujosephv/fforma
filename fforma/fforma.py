@@ -83,14 +83,6 @@ class FFORMA:
                                                                              seed)
         self._fitted = False
 
-    def _tsfeatures(self, y_train_df, y_val_df, freq):
-        #TODO receive panel of freq
-        complete_data = pd.concat([y_train_df, y_test_df.filter(items=['unique_id', 'ds', 'y'])])
-        holdout_feats = tsfeatures(y_train_df)
-        feats = tsfeatures(complete_data)
-
-        return feats, holdout_feats
-
     # Objective function for lgb
     def fforma_objective(self, predt: np.ndarray, dtrain) -> Tuple[np.ndarray, np.ndarray]:
         '''

@@ -6,12 +6,12 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="fforma-FedericoGarza", # Replace with your own username
     version="0.0.1",
-    author="Federico Garza Ramírez",
+    author="Manu Joseph",
     author_email="author@example.com",
-    description="FForma model for python",
+    description="Fork of the FFORMA model implementation by Federico Garza Ramírez, but with lesser dependencies and clean separation between fit and predict",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/FedericoGarza/fforma",
+    url="https://github.com/manujosephv/fforma",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
