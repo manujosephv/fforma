@@ -3,8 +3,13 @@
 
 import numpy as np
 import pandas as pd
-
-import dask
+import warnings
+try:
+    import dask
+    DASK_INSTALLED = True
+except ImportError:
+    DASK_INSTALLED = False
+    warnings.warn("Dask not installed. Please install dask to enable dask supported fit and predict")
 
 from collections import ChainMap
 from functools import partial
@@ -12,7 +17,7 @@ from itertools import product
 from copy import deepcopy
 
 from sklearn.utils.validation import check_is_fitted
-from ESRNN.utils_evaluation import smape, mase, evaluate_panel
+from .utils_metrics import smape, mase, evaluate_panel
 
 
 class MetaModels:
@@ -47,12 +52,15 @@ class MetaModels:
             uid, y = ts
             y = y['y'].values
             name_model, model = deepcopy(meta_model)
-            fitted_model = dask.delayed(model.fit)(y)
+            if DASK_INSTALLED:
+                fitted_model = dask.delayed(model.fit)(y)
+            else:
+                fitted_model = model.fit(y)
             fitted_models.append(fitted_model)
             uids.append(uid)
             name_models.append(name_model)
-
-        fitted_models = dask.delayed(fitted_models).compute(scheduler=self.scheduler)
+        if DASK_INSTALLED:
+            fitted_models = dask.delayed(fitted_models).compute(scheduler=self.scheduler)
 
         fitted_models = pd.DataFrame.from_dict({'unique_id': uids,
                                                 'model': name_models,
@@ -81,13 +89,17 @@ class MetaModels:
             h = len(df)
             model = self.fitted_models_.loc[(uid, name_model)]
             model = model.item()
-            y_hat = dask.delayed(model.predict)(h)
+            if DASK_INSTALLED:
+                y_hat = dask.delayed(model.predict)(h)
+            else:
+                y_hat = model.predict(h)
             forecasts.append(y_hat)
             uids.append(np.repeat(uid, h))
             dss.append(df['ds'])
             name_models.append(np.repeat(name_model, h))
 
-        forecasts = dask.delayed(forecasts).compute(scheduler=self.scheduler)
+        if DASK_INSTALLED:
+            forecasts = dask.delayed(forecasts).compute(scheduler=self.scheduler)
         forecasts = zip(uids, dss, name_models, forecasts)
 
         forecasts_df = []
@@ -96,10 +108,14 @@ class MetaModels:
                        'ds': ds,
                        'model': name_model,
                        'forecast': forecast}
-            df = dask.delayed(pd.DataFrame.from_dict)(dict_df)
+            if DASK_INSTALLED:
+                df = dask.delayed(pd.DataFrame.from_dict)(dict_df)
+            else:
+                df = pd.DataFrame.from_dict(dict_df)
             forecasts_df.append(df)
-
-        forecasts = dask.delayed(forecasts_df).compute()
+        
+        if DASK_INSTALLED:
+            forecasts = dask.delayed(forecasts_df).compute()
         forecasts = pd.concat(forecasts)
 
         forecasts = forecasts.set_index(['unique_id', 'ds', 'model']).unstack()

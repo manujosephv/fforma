@@ -1,3 +1,4 @@
+from typing import Tuple
 import pandas as pd
 import numpy as np
 import multiprocessing as mp
@@ -38,7 +39,8 @@ class FFORMA:
         <https://robjhyndman.com/publications/fforma/>
         """
         self.dict_obj = {'FFORMA': (self.fforma_objective, self.fforma_loss),
-                         'FFORMADL': (self.fformadl_objective, self.fformadl_loss)}
+                        #  'FFORMADL': (self.fformadl_objective, self.fformadl_loss)
+                         }
 
         fobj, feval = self.dict_obj.get(objective, (None, None))
         self.objective, self.greedy_search = objective, greedy_search
@@ -89,7 +91,7 @@ class FFORMA:
         return feats, holdout_feats
 
     # Objective function for lgb
-    def fforma_objective(self, predt: np.ndarray, dtrain) -> (np.ndarray, np.ndarray):
+    def fforma_objective(self, predt: np.ndarray, dtrain) -> Tuple[np.ndarray, np.ndarray]:
         '''
         Compute...
         '''
@@ -107,7 +109,7 @@ class FFORMA:
         #hess = grad*(1 - 2*preds_transformed)
         return grad.flatten('F'), hess.flatten('F')
 
-    def fforma_loss(self, predt: np.ndarray, dtrain) -> (str, float):
+    def fforma_loss(self, predt: np.ndarray, dtrain) -> Tuple[str, float]:
         '''
         Compute...
         '''
