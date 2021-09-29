@@ -4,12 +4,6 @@ import pandas as pd
 import numpy as np
 
 from fforma import FFORMA
-from fforma.meta_model import (
-    MetaModels,
-    temp_holdout,
-    calc_errors,
-    get_prediction_panel
-)
 # from fforma.utils_metrics import Naive2
 from tsfeatures import tsfeatures
 
@@ -63,18 +57,17 @@ def main():
     #Training fforma
 
     # optimal params by hyndman
-    optimal_params = {'n_estimators': 94,
+    optimal_params = {'n_estimators': 10,
                       'eta': 0.58,
                       'max_depth': 14,
                       'subsample': 0.92,
                       'colsample_bytree': 0.77}
     fforma = FFORMA(params=optimal_params)
     fforma.fit(errors=complete_errors,
-               holdout_feats=complete_features,
                feats=complete_features)
 
-    fforma_predictions = fforma.predict(complete_predictions)
-
+    fforma_predictions = fforma.predict(complete_predictions, feats=complete_features)
+    print(fforma_predictions)
     #evaluate predictions
 
 

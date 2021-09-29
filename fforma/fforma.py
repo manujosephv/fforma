@@ -1,4 +1,5 @@
 from typing import Tuple
+import warnings
 import pandas as pd
 import numpy as np
 import multiprocessing as mp
@@ -126,11 +127,7 @@ class FFORMA:
 
         return 'FFORMA-loss', fforma_loss, False
 
-    def fit(self, y_train_df=None, y_val_df=None,
-            val_periods=None,
-            errors=None, holdout_feats=None,
-            feats=None, freq=None, base_model=None,
-            sorted_data=False, weights=None):
+    def fit(self, errors, feats):
         """
         y_train_df: pandas df
             panel with columns unique_id, ds, y
@@ -140,54 +137,23 @@ class FFORMA:
             int: number of val periods
             pandas df: panel with columns unique_id, val_periods
         """
+        assert errors.shape[0] == feats.shape[0], "`errors` and `feats` should have the same number of rows"
+        assert np.all(feats.index==errors.index), "`errors` and `feats` should have the same index"
+        _check_valid_columns(errors, cols=['unique_id'], cols_index=['unique_id'])
 
-        if (errors is None) and (feats is None):
-            assert (y_train_df is not None) and (y_val_df is not None), "you must provide a y_train_df and y_val_df"
-            is_pandas_df = _check_passed_dfs(y_train_df, y_val_df_)
+        best_models_count = errors.idxmin(axis=1).value_counts()
+        # best_models_count = pd.Series(best_models_count, index=errors.columns)
+        loser_models = best_models_count[best_models_count.isna()].index.to_list()
 
-            if not sorted_data:
-                if is_pandas_df:
-                    y_train_df = y_train_df.sort_values(['unique_id', 'ds'])
-                    y_val_df = y_val_df.sort_values(['unique_id', 'ds'])
-                else:
-                    y_train_df = y_train_df.sort_index()
-                    y_val_df = y_val_df.sort_index()
+        if len(loser_models) > 0:
+            print('Models {} never win.'.format(' '.join(loser_models)))
+            print('Removing it...\n')
+            errors = errors.copy().drop(columns=loser_models)
 
-        if errors is None:
-            pass
-            #calculate contribution_to_error(y_train_df, y_val_df)
-        else:
-            _check_valid_columns(errors, cols=['unique_id'], cols_index=['unique_id'])
-
-            best_models_count = errors.idxmin(axis=1).value_counts()
-            best_models_count = pd.Series(best_models_count, index=errors.columns)
-            loser_models = best_models_count[best_models_count.isna()].index.to_list()
-
-            if len(loser_models) > 0:
-                print('Models {} never win.'.format(' '.join(loser_models)))
-                print('Removing it...\n')
-                errors = errors.copy().drop(columns=loser_models)
-
-            self.contribution_to_error = errors.values
-            best_models = self.contribution_to_error.argmin(axis=1)
-
-
-        if feats is None:
-            feats, holdout_feats = self._tsfeatures(y_train_df, y_val_df, freq)
-        else:
-            assert holdout_feats is not None, "when passing feats you must provide holdout feats"
-
-        self.lgb = self._train(holdout_feats, best_models)
-
-        raw_score_ = self.lgb.predict(feats, raw_score=True)
-        self.raw_score_ = pd.DataFrame(raw_score_,
-                                       index=feats.index,
-                                       columns=errors.columns)
-
-        weights = softmax(raw_score_, axis=1)
-        self.weights_ = pd.DataFrame(weights,
-                                     index=feats.index,
-                                     columns=errors.columns)
+        self.contribution_to_error = errors.values
+        self._error_columns = errors.columns.tolist()
+        best_models = self.contribution_to_error.argmin(axis=1)
+        self.lgb = self._train(feats, best_models)
 
         if self.greedy_search:
             performance = self.lgb.best_score['valid_1']['FFORMA-loss']
@@ -201,7 +167,7 @@ class FFORMA:
                 self.contribution_to_error = errors.values
                 best_models = self.contribution_to_error.argmin(axis=1)
 
-                new_lgb = self._train(holdout_feats, best_models)
+                new_lgb = self._train(feats, best_models)
                 performance_new_lgb = new_lgb.best_score['valid_1']['FFORMA-loss']
                 better_model = performance_new_lgb <= performance
                 if not better_model:
@@ -213,19 +179,10 @@ class FFORMA:
                     print(f'\nReached better performance {performance}\n')
                     self.lgb = new_lgb
 
-                    raw_score_ = self.lgb.predict(feats, raw_score=True)
-                    self.raw_score_ = pd.DataFrame(raw_score_,
-                                                   index=feats.index,
-                                                   columns=errors.columns)
-
-                    weights = softmax(raw_score_, axis=1)
-                    self.weights_ = pd.DataFrame(weights,
-                                                 index=feats.index,
-                                                 columns=errors.columns)
         self._fitted = True
 
 
-    def predict(self, y_hat_df, fforms=False):
+    def predict(self, y_hat_df, feats, fforms=False):
         """
         Parameters
         ----------
@@ -233,16 +190,30 @@ class FFORMA:
             panel with columns unique_id, ds, {model} for each model to ensemble
         """
         assert self._fitted, "Model not fitted yet"
-
+        new_unique_ids = set(y_hat_df.index.get_level_values(0))- set(feats.index)
+        if len(new_unique_ids)>0:
+            warnings.warn(f"{len(new_unique_ids)} unique_id's are missing in feature matrix. They will fallback to a uniform average")
+        raw_score_ = self.lgb.predict(feats, raw_score=True)
+        # self.raw_score_ = pd.DataFrame(raw_score_,
+        #                                index=feats.index,
+        #                                columns=self._error_columns)
+        weights = softmax(raw_score_, axis=1)
+        self.weights_ = pd.DataFrame(weights,
+                                     index=feats.index,
+                                     columns=[f"{c}_weight" for c in self._error_columns])
         if fforms:
             weights = (self.weights_.div(self.weights_.max(axis=1), axis=0) == 1)*1
             name = 'fforms_prediction'
         else:
             weights = self.weights_
             name = 'fforma_prediction'
+        weights = y_hat_df.join(weights, on="unique_id").drop(columns=y_hat_df.columns)
+        weights.columns = self._error_columns
+        #Filling missing weights with uniform weights
+        uniform_weight = 1/len(self._error_columns)
+        weights.fillna(uniform_weight, inplace=True)
         fforma_preds = weights * y_hat_df
         fforma_preds = fforma_preds.sum(axis=1)
         fforma_preds.name = name
         preds = pd.concat([y_hat_df, fforma_preds], axis=1)
-
         return preds
