@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import multiprocessing as mp
 import lightgbm as lgb
-
 import copy
 
 from sklearn.model_selection import StratifiedKFold
@@ -153,6 +152,7 @@ class FFORMA:
             errors = copy.deepcopy(errors)
             print(f'\nInitial performance: {performance}\n')
             while improvement and errors.shape[1]>2:
+                #TODO need to refactor this out to predict or some other way
                 model_to_remove = self.weights_.mean().nsmallest(1).index
                 print(f'Removing {model_to_remove}\n')
                 errors = errors.drop(columns=model_to_remove)
